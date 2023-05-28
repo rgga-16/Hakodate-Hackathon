@@ -1,20 +1,26 @@
-from flask import Flask, send_from_directory, request
+from flask import Flask, send_from_directory, request, jsonify
 import random, requests, base64, cv2, os
 import numpy as np
 from io import BytesIO
 from PIL import Image
 from ultralytics import YOLO
-
+import pickle
+import uuid
 
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import OperationStatusCodes
 from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
 from msrest.authentication import CognitiveServicesCredentials
 
-subscription_key = os.getenv("VISION_KEY")
-endpoint = os.getenv("VISION_ENDPOINT")
+#ubscription_key = os.getenv("VISION_KEY")
+#endpoint = os.getenv("VISION_ENDPOINT")
 
-cv_client = ComputerVisionClient(endpoint, CognitiveServicesCredentials(subscription_key))
+#cv_client = ComputerVisionClient(endpoint, CognitiveServicesCredentials(subscription_key))
+
+AZURE_TRANSLATE_KEY = os.environ["AZURE_TRANSLATOR_KEY"]
+AZURE_TRANSLATE_ENDPOINT = os.environ["AZURE_TRANSLATE_ENDPOINT"]
+AZURE_TRANSLATE_LOCATION = os.environ["AZURE_TRANSLATE_LOCATION"]
+
 
 import infer
 
@@ -70,6 +76,58 @@ def base():
 def home(path):
     return send_from_directory('./client/public', path)
 
+# Path for schedule list api
+@app.route('/api/schedule')
+def schedule_index():
+    output = []
+
+    with open ('./datastore.pickle','rb') as f:
+        origin_data = pickle.load(f,encoding='utf8')
+
+    for category in origin_data:
+        for line in origin_data[category]:
+            output.append({category:line})
+
+    return jsonify(output)
+
+# Path for Azure Translator
+@app.route('/api/translate',methods=['post'])
+def translate():
+    request_body = request.get_json()
+    source_lang = request_body['from']
+    target_lang = request_body['to']
+    text_list = request_body['text']
+
+    azure_translate_body = []
+    for text in text_list:
+        azure_translate_body.append({'text':text})
+    print(azure_translate_body)
+
+    azure_translate_params = {
+        'api-version':'3.0',
+        'from':source_lang,
+        'to':target_lang
+    }
+
+    azure_translate_header ={
+        'Ocp-Apim-Subscription-Key':AZURE_TRANSLATE_KEY,
+        'Ocp-Apim-Subscription-Region':AZURE_TRANSLATE_LOCATION,
+        'Content-type':'application/json',
+        'X-ClientTraceId':str(uuid.uuid4())
+    }
+
+    translate_request = requests.post(AZURE_TRANSLATE_ENDPOINT,params=azure_translate_params,headers=azure_translate_header,json=azure_translate_body)
+    translate_responses = translate_request.json()
+
+    print(translate_responses)
+
+    translate_result = []
+    for translate_response in translate_responses:
+        result = translate_response['translations'][0]['text']
+        print(result)
+        translate_result.append(result)
+
+    return jsonify(translate_result)
 
 if __name__ == "__main__":
     app.run(debug=True)
