@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from PIL import Image
 
 
 def box_label(image, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
@@ -32,6 +33,8 @@ def plot_bboxes(image, boxes, labels=[], colors=[], score=True, conf=None):
         colors = [(89, 161, 197),(67, 161, 255),(19, 222, 24),(186, 55, 2),(167, 146, 11),(190, 76, 98),(130, 172, 179),(115, 209, 128),(204, 79, 135),(136, 126, 185),(209, 213, 45),(44, 52, 10),(101, 158, 121),(179, 124, 12),(25, 33, 189),(45, 115, 11),(73, 197, 184),(62, 225, 221),(32, 46, 52),(20, 165, 16),(54, 15, 57),(12, 150, 9),(10, 46, 99),(94, 89, 46),(48, 37, 106),(42, 10, 96),(7, 164, 128),(98, 213, 120),(40, 5, 219),(54, 25, 150),(251, 74, 172),(0, 236, 196),(21, 104, 190),(226, 74, 232),(120, 67, 25),(191, 106, 197),(8, 15, 134),(21, 2, 1),(142, 63, 109),(133, 148, 146),(187, 77, 253),(155, 22, 122),(218, 130, 77),(164, 102, 79),(43, 152, 125),(185, 124, 151),(95, 159, 238),(128, 89, 85),(228, 6, 60),(6, 41, 210),(11, 1, 133),(30, 96, 58),(230, 136, 109),(126, 45, 174),(164, 63, 165),(32, 111, 29),(232, 40, 70),(55, 31, 198),(148, 211, 129),(10, 186, 211),(181, 201, 94),(55, 35, 92),(129, 140, 233),(70, 250, 116),(61, 209, 152),(216, 21, 138),(100, 0, 176),(3, 42, 70),(151, 13, 44),(216, 102, 88),(125, 216, 93),(171, 236, 47),(253, 127, 103),(205, 137, 244),(193, 137, 224),(36, 152, 214),(17, 50, 238),(154, 165, 67),(114, 129, 60),(119, 24, 48),(73, 8, 110)]
 
     #plot each boxes
+    detected_boxes = []
+    detected_labels = []
     for box in boxes:
         #add score in label if score=True
         if score :
@@ -43,9 +46,13 @@ def plot_bboxes(image, boxes, labels=[], colors=[], score=True, conf=None):
             if box[-2] > conf:
                 color = colors[int(box[-1])]
                 box_label(image, box, label, color)
+                detected_boxes.append(box)
+                detected_labels.append(label)
         else:
             color = colors[int(box[-1])]
             box_label(image, box, label, color)
+    
+    return detected_labels, detected_boxes
 
     # # #show image
     # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -53,8 +60,13 @@ def plot_bboxes(image, boxes, labels=[], colors=[], score=True, conf=None):
 
 if __name__=="__main__":
     # Load the pre-trained YOLO model here
-    model = YOLO("yolov8s.pt")
-
+    model = YOLO("yolov8s.pt").load('best.pt')
+    trash_cats = ['Aluminium foil', 'Battery', 'Blister pack', 'Bottle', 'Bottle cap', 'Broken glass', 'Can', 'Carton', 'Cup', 'Food waste', 'Glass jar', 'Lid','Other plastic', 'Paper', 'Paper bag', 'Plastic bag & wrapper', 'Plastic container', 'Plastic glooves', 'Plastic utensils', 'Pop tab', 'Rope & strings', 'Scrap metal', 'Shoe', 'Squeezable tube', 'Straw', 'Styrofoam piece', 'Unlabeled litter','Cigarette']
+    
+    labels = {}
+    for i in range(0,len(trash_cats)):
+        labels[i] = trash_cats[i]
+        
     # results = model.predict(source="0",show=True)
 
     # # Set up the webcam
@@ -63,9 +75,12 @@ if __name__=="__main__":
     while True:
         # Capture a frame from the webcam
         ret, frame = cap.read() #frame is an np.array(480,640,3)
+        img = Image.fromarray(np.uint8(frame)).convert('RGB')
+        img = img.resize((512,512),Image.BILINEAR)
+        frame = np.array(img)
 
         results = model.predict(frame)
-        plot_bboxes(frame,results[0].boxes.boxes,conf=0.8)
+        plot_bboxes(frame,results[0].boxes.boxes,conf=0.3)
 
         cv2.imshow("Object detection", frame)
 

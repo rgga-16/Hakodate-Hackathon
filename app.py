@@ -1,8 +1,11 @@
 from flask import Flask, send_from_directory, request, jsonify, render_template
 import random, requests, base64, cv2, os
+# https://www.youtube.com/watch?v=ZzC3SJJifMg&t=59s
+import random, requests, base64, cv2, os, sys, shutil
+
 import numpy as np
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageDraw
 from ultralytics import YOLO
 import pickle
 import uuid
@@ -20,21 +23,17 @@ from msrest.authentication import CognitiveServicesCredentials
 AZURE_TRANSLATE_KEY = os.environ["AZURE_TRANSLATOR_KEY"]
 AZURE_TRANSLATE_ENDPOINT = os.environ["AZURE_TRANSLATE_ENDPOINT"]
 AZURE_TRANSLATE_LOCATION = os.environ["AZURE_TRANSLATE_LOCATION"]
-
-
 import infer
 
 app = Flask(__name__, static_folder="./client/static", template_folder="./client/templates")
 
-# Load the pre-trained YOLO model here
-model = YOLO("yolov8s.pt")
+trash_cats = ['Aluminium foil', 'Battery', 'Blister pack', 'Bottle', 'Bottle cap', 'Broken glass', 'Can', 'Carton', 'Cup', 'Food waste', 'Glass jar', 'Lid','Other plastic', 'Paper', 'Paper bag', 'Plastic bag & wrapper', 'Plastic container', 'Plastic glooves', 'Plastic utensils', 'Pop tab', 'Rope & strings', 'Scrap metal', 'Shoe', 'Squeezable tube', 'Straw', 'Styrofoam piece', 'Unlabeled litter','Cigarette']
 
-def get_predicted_objects_yolo(image_nparray):
-    results = model.predict(image_nparray)
-    infer.plot_bboxes(image_nparray,results[0].boxes.boxes,conf=0.8)
-    cv2.imshow("",image_nparray)
+burnable = ['Carton', 'Cup', 'Food waste', 'Paper', 'Paper bag', 'Rope & strings', 'Shoe', 'Paper', 'Paper bag', 'Unlabeled litter', 'Cigarette']
+non_burnable = ['Aluminium foil', 'Battery', 'Broken glass', 'Glass jar', 'Lid', 'Scrap metal']
+plastic = ['Blister pack', 'Bottle cap','Other plastic', 'Plastic bag & wrapper', 'Plastic container', 'Plastic glooves', 'Plastic utensils', 'Squeezable tube', 'Straw', 'Styrofoam piece','Pop tab']
+PET_bottles_cans = ['Bottle','Can']
 
-    return 
 
 @app.route('/analyze_image', methods=['POST'])
 def analyze_image():
@@ -42,29 +41,74 @@ def analyze_image():
     image_data = form_data['image']
 
     image_bytes = BytesIO(base64.b64decode(image_data.split(',')[1]))
+    image = Image.open(image_bytes)
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+    temp_impath = "temp.jpg"
+    image.save(temp_impath)
 
-    # image = Image.open(im_bytes)
-    # image_nparray = np.array(image)[:,:,:3]
-    # get_predicted_objects_yolo(image_nparray)
+    shutil.rmtree('runs')
 
-    # Using Microsoft Azure Computer Vision API
-    response = cv_client.analyze_image_in_stream(image_bytes, [VisualFeatureTypes.tags, VisualFeatureTypes.categories])
-    
-    if response.tags:
-        print('Tags:')
-        for tag in response.tags:
-            print(tag.name)
+    os.system(f"yolo task=detect mode=predict model=best.pt conf=0.25 source=temp.jpg save=True save_txt=True")
 
-    if response.categories:
-        print('Categories:')
-        for category in response.categories:
-            print(category.name)
-    
-    
+    image_detections = Image.open('./runs/detect/predict/temp.jpg')
+    buffered = BytesIO()
+    image_detections.save(buffered, format='JPEG')
+    image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    detected_cat_ids = []
+    detections = []
+    labels_path = './runs/detect/predict/labels/temp.txt'
+
+    if (os.path.exists(labels_path)):
+        print("Labels file exists")
+        with open(labels_path,'r') as file:
+            for line in file:
+                first_digit = int(line.split()[0])
+                detected_cat_ids.append(first_digit)
+
+
+    detected_cat_names = [trash_cats[cat] for cat in detected_cat_ids]
+    for cat_name in detected_cat_names:
+        for burnable_cat in burnable:
+            if cat_name == burnable_cat:
+                print("Burnable")
+                detections.append({
+                    "name": cat_name,
+                    "type": "burnable"
+                })
+                break
+        for non_burnable_cat in non_burnable:
+            if cat_name == non_burnable_cat:
+                print("Non-burnable")
+                detections.append({
+                    "name": cat_name,
+                    "type": "non-burnable"
+                })
+                break
+        for plastic_cat in plastic:
+            if cat_name == plastic_cat:
+                print("Plastic")
+                detections.append({
+                    "name": cat_name,
+                    "type": "plastic"
+                })
+                break
+        for PET_bottles_can in PET_bottles_cans:
+            if cat_name == PET_bottles_can:
+                print("PET bottles and cans")
+                detections.append({
+                    "name": cat_name,
+                    "type": "PET bottles, bottles, and cans"
+                })
+                break
+
+    response_dict = {
+        "detection_image": image_base64,
+        "detection_labels": detections,
+    }
     print()
-
-
-    return
+    return jsonify(response_dict)
 
 # Path for our main Svelte page
 @app.route("/old")
