@@ -1,4 +1,4 @@
-from flask import Flask, send_from_directory, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify, render_template
 import random, requests, base64, cv2, os
 import numpy as np
 from io import BytesIO
@@ -24,7 +24,7 @@ AZURE_TRANSLATE_LOCATION = os.environ["AZURE_TRANSLATE_LOCATION"]
 
 import infer
 
-app = Flask(__name__, static_folder="./client/public")
+app = Flask(__name__, static_folder="./client/static", template_folder="./client/templates")
 
 # Load the pre-trained YOLO model here
 model = YOLO("yolov8s.pt")
@@ -67,7 +67,7 @@ def analyze_image():
     return
 
 # Path for our main Svelte page
-@app.route("/")
+@app.route("/old")
 def base():
     return send_from_directory('./client/public', 'index.html')
 
@@ -128,6 +128,11 @@ def translate():
         translate_result.append(result)
 
     return jsonify(translate_result)
+
+# Path for new index
+@app.route('/')
+def index():
+    return render_template("index.html")
 
 if __name__ == "__main__":
     app.run(debug=True)
